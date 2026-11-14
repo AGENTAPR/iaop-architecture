@@ -1,0 +1,56 @@
+name: Main CI
+
+# Validates architecture docs/standards presence and links. Runs ONLY on
+# pushes to main.
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: main-ci-${{ github.repository }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Docs validation
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Required documents exist
+        run: |
+          for f in \
+            docs/repository-landscape.md \
+            docs/foundation-discovery.md \
+            docs/standards/IAOP_ENGINEERING_STANDARDS.md \
+            docs/standards/IAOP_RUST_WORKSPACE_STANDARD.md \
+            docs/standards/IAOP_AXUM_SERVICE_TEMPLATE.md \
+            docs/standards/IAOP_API_CONTRACT_STANDARD.md \
+            docs/standards/IAOP_EVENT_SCHEMA_STANDARD.md \
+            docs/standards/IAOP_DATABASE_MIGRATION_STANDARD.md \
+            docs/standards/IAOP_CICD_MAIN_ONLY_POLICY.md; do
+            test -f "$f" || { echo "MISSING $f"; exit 1; }
+          done
+          echo "all required docs present"
+      - name: Internal markdown links resolve
+        run: |
+          python - <<'PY'
+          import glob, os, re, sys
+          bad = []
+          for f in glob.glob('docs/**/*.md', recursive=True) + glob.glob('*.md'):
+              text = open(f, encoding='utf-8').read()
+              for m in re.finditer(r'\]\(([^)#\s]+)(#[^)]*)?\)', text):
+                  target = m.group(1)
+                  if '://' in target or target.startswith('mailto:'):
+                      continue
+                  p = os.path.normpath(os.path.join(os.path.dirname(f), target))
+                  if not os.path.exists(p):
+                      bad.append(f'{f} -> {target}')
+          if bad:
+              print('BROKEN LINKS:'); [print(' ', b) for b in bad]; sys.exit(1)
+          print('all internal links resolve')
+          PY
